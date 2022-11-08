@@ -1,14 +1,15 @@
 #define TELEGRAM
-#define VERSION "0.0.18"
+#define VERSION "0.0.20"
 
 #include <DHT.h>
-#define DHTTYPE DHT21
 #define DHTPIN 2
 
-DHT dht(DHTPIN, DHTTYPE);  //, 11);  // 11 works fine for ESP8266
+DHT dht11(DHTPIN, DHT11);
+DHT dht21(DHTPIN, DHT21);
 float humidity, temp;  // Values read from sensor
 float t_add = 0;
 float h_add = 0;
+bool is_dht11 = true;
 
 #ifdef TELEGRAM
 #define SKETCH_VERSION VERSION "tg"
@@ -395,8 +396,14 @@ void gettemperature() {
     // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
     // Check if any reads failed and exit early (to try again).
     for (int i = 0; i < 10; i++) {
-      humidity = dht.readHumidity();      // Read humidity (percent)
-      temp = dht.readTemperature(false);  // Read temperature as Fahrenheit
+      if (is_dht11) {
+        humidity = dht11.readHumidity();      // Read humidity (percent)
+        temp = dht11.readTemperature(false);  // Read temperature as Fahrenheit
+      } else {
+        humidity = dht21.readHumidity();      // Read humidity (percent)
+        temp = dht21.readTemperature(false);  // Read temperature as Fahrenheit
+      }
+
       if (isnan(humidity) || isnan(temp) || temp > 1000 || humidity > 1000) {
         delay(500);
       } else {
@@ -508,8 +515,6 @@ void setup(void) {
     wifiMulti.addAP(ssids[i], pass);
   }
 
-  dht.begin();
-
   Serial.println("Connecting...");
   if (wifiMulti.run(connectTimeoutMs) == WL_CONNECTED) {
     ssid = WiFi.SSID();
@@ -521,6 +526,7 @@ void setup(void) {
       if (deviceip.equals(pcs[i][0])) {
         iListIndex = i;
         device = pcs[i][1];
+        is_dht11 = pcs[i][6] == "11";
         t_add = String(pcs[i][4]).toFloat();
         h_add = String(pcs[i][5]).toFloat();
         if (pcs[i][2] == "r") {
@@ -537,6 +543,12 @@ void setup(void) {
           String(pcs[i][3]).toCharArray(token, strlen(pcs[i][3]) + 1);
         }
 #endif
+
+        if (is_dht11) {
+          dht11.begin();
+        } else {
+          dht21.begin();
+        }
 
         break;
       }
@@ -577,7 +589,7 @@ void setup(void) {
       </head>\
       <body>\
         <h1>"
-          + device + "</h1>" + ssid + "<br><small>" SKETCH_VERSION "</small><br>\
+          + device + "</h1>DHT" + pcs[iListIndex][6] + "<br>" + ssid + "<br><small>" SKETCH_VERSION "</small><br>\
         <div>";
 
     server.on("/", handleRoot);
@@ -644,22 +656,22 @@ void loop(void) {
 
         char* command = strtok(buf, " ");
         String s = "";
-        if ((strcmp(command, "test") == 0)) {
+        if (strcmp(command, "dht") == 0) {
           gettemperature();
           s = String("humidity: ") + String((int)humidity) + "%,\n";
           s += String("temperature: ") + String(temp) + "&#176;C\n";
           tgChannelSend(s);
-        } else if ((strcmp(command, "restart") == 0)) {
+        } else if (strcmp(command, "restart") == 0) {
           s = "Restarting...";
           do_restart = true;
-        } else if ((strcmp(command, "update") == 0)) {
+        } else if (strcmp(command, "update") == 0) {
           s = "Updating...";
           fwfn = strtok(NULL, " ");
           do_update = fwfn != "";
           if (!do_update) {
             s = "Second param 'File name' is needed";
           }
-        } else if ((strcmp(command, "updateall") == 0)) {
+        } else if (strcmp(command, "updateall") == 0) {
           s = "Updating all...";
           fwfn = strtok(NULL, " ");
           updateOthers(fwfn);
